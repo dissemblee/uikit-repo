@@ -1,0 +1,67 @@
+
+
+services:
+  app:
+    image: node:20
+    ports:
+      - "80:3000"
+    command: >
+      sh -c "npm install && npm run start:dev"
+    environment:
+      NODE_ENV: development
+      MINIO_HOST: minio
+      MINIO_PASSWORD: ${MINIO_PASSWORD}
+    working_dir: /app
+    depends_on:
+      minio:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /tmp:/tmp
+    networks:
+      base:
+        
+  minio:
+    image: quay.io/minio/minio:latest
+    ports:
+      - "0000:9000"
+      - "0000:9001"
+    command: [ "server", "--console-address", ":9001", "/data" ]
+    volumes:
+      - minio-data:/data
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+    networks:
+      base:
+    restart: unless-stopped
+    
+  postgres:
+    image: postgres:18
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - 0000:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      base:
+    restart: unless-stopped
+    
+volumes:
+  minio-data:
+  postgres-data:
+
+
+networks:
+  base:
