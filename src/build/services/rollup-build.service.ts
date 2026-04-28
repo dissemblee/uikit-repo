@@ -2,11 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { BuildService } from './build-service.interface';
 import { BuildOptions } from '../models/build-options.interface';
 import { ComponentService } from 'src/component/component.service';
-import { extract, Unpack } from 'tar';
+import { create, extract, Unpack } from 'tar';
 import tmp from 'tmp';
 import path from 'node:path';
 import { finished } from 'node:stream/promises';
-import typescript from '@rollup/plugin-typescript'; 
+import typescript from '@rollup/plugin-typescript';
 import axios from 'axios';
 import resolve, { nodeResolve } from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
@@ -15,12 +15,13 @@ import babel from '@rollup/plugin-babel';
 import { rollup } from 'rollup';
 import { InjectMinio } from 'src/minio/minio.decorator';
 import { Client as MinioClient } from 'minio';
+import { MINIO_REPO_BUCKET } from 'src/minio/constants';
 
 @Injectable()
 export class RollupBuildService extends BuildService {
   constructor(
     private readonly componentService: ComponentService,
-    @InjectMinio() private readonly minio: MinioClient
+    @InjectMinio() private readonly minio: MinioClient,
   ) {
     super();
   }
@@ -45,10 +46,7 @@ export class RollupBuildService extends BuildService {
 
     const bundle = await rollup({
       input: this.getEntry(tmpDir, options),
-      plugins: [
-        nodeResolve(),
-        commonjs(),
-      ]
+      plugins: [nodeResolve(), commonjs()],
     });
 
     await bundle.write({
@@ -57,18 +55,49 @@ export class RollupBuildService extends BuildService {
       exports: 'named',
       preserveModules: true,
       preserveModulesRoot: path.join(tmpDir, 'lib', 'src'),
-      sourcemap: true
-    })
+      sourcemap: true,
+    });
 
-    await bundle.close();
+    fs.copyFileSync(
+      path.join(tmpDir, 'lib', 'package.json'),
+      path.join(tmpDir, 'dist', 'package.json'),
+    );
 
+    await create(
+      {
+        gzip: true,
+        file: path.join(tmpDir, 'tar.tgz'),
+        portable: true,
+        strict: true,
+        cwd: path.join(tmpDir, 'dist'),
+      },
+      ['.'],
+    );
+
+    const stream = fs.createReadStream(path.join(tmpDir, 'tar.tgz'));
+
+    await this.minio.putObject(
+      MINIO_REPO_BUCKET,
+      `${options.username}/${options.name}-${options.version}.tgz`,
+      stream,
+    );
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
     
+    await bundle.close();
   }
 
   private getEntry(tmpDir: string, options: BuildOptions) {
     let entry = {};
     for (const meta of options.components) {
-      entry[meta.name] = path.join(tmpDir, 'lib', 'src', meta.username, meta.name, 'index.js');
+      entry[meta.name] = path.join(
+        tmpDir,
+        'lib',
+        'src',
+        meta.username,
+        meta.name,
+        'index.js',
+      );
     }
     return entry;
   }
