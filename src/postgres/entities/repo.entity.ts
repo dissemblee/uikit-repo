@@ -1,5 +1,6 @@
 import {
   Column,
+  CreateDateColumn,
   Entity,
   JoinTable,
   ManyToMany,
@@ -32,4 +33,10 @@ export class Repo {
     inverseJoinColumn: { name: 'componentId' },
   })
   components: Component[];
+
+  @CreateDateColumn({type: 'timestamp', default: () => "CURRENT_TIMESTAMP(6)"})
+  createdAt: Date;
+
+  @Column({ type: 'timestamp', nullable: true})
+  updatedAt?: Date;
 }

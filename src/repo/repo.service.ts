@@ -20,7 +20,8 @@ export class RepoService {
   constructor(
     @InjectMinio() private readonly minioClient: MinioClient,
     @InjectRepository(Repo) private readonly repoRepository: Repository<Repo>,
-    @InjectRepository(Component) private readonly componentRepository: Repository<Component>,
+    @InjectRepository(Component)
+    private readonly componentRepository: Repository<Component>,
     private readonly buildService: BuildService,
     private readonly componentService: ComponentService,
   ) {}
@@ -54,14 +55,15 @@ export class RepoService {
   }
 
   private async getAndSaveComponents(meta: ComponentType[]) {
-
+    this.logger.log('meta: ' + JSON.stringify(meta));
     let components = meta.map((m) => {
       const entity = new Component();
       entity.id = m.id;
       entity.version = m.version;
+
       return entity;
     });
-
+    this.logger.log('entities: ' + JSON.stringify(components));
     components = await this.componentRepository.save(components);
 
     return components;

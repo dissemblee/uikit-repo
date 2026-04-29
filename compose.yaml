@@ -40,7 +40,7 @@ services:
     restart: unless-stopped
     
   build:
-    image: ghcr.io/48-iq/uikit-build:v0.0.6
+    image: ghcr.io/48-iq/uikit-build:v0.0.7
     depends_on:
       postgres: 
         condition: service_healthy

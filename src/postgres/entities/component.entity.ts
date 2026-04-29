@@ -1,7 +1,7 @@
 import { Column, CreateDateColumn, Entity, JoinColumn, ManyToMany, ManyToOne, PrimaryColumn } from 'typeorm';
 import { Repo } from './repo.entity';
 
-@Entity()
+@Entity({ name: 'components' })
 export class Component {
   @PrimaryColumn()
   id: string;
@@ -11,10 +11,4 @@ export class Component {
 
   @ManyToMany(() => Repo, (repo) => repo.components)
   repos: Repo[];
-
-  @CreateDateColumn({type: 'timestamp', default: () => "CURRENT_TIMESTAMP(6)"})
-  createdAt: Date;
-
-  @Column({ type: 'timestamp', nullable: true})
-  updatedAt?: Date;
 }
