@@ -46,12 +46,13 @@ export class RepoController {
 
   @Public()
   @Get('/:username/:name')
-  getRepo(
+  async getRepo(
     @Param('username') username: string,
     @Param('name') name: string,
   ) {
     const repoId = `${username}/${name}`;
-    return this.repoService.getRepo(repoId);
+    const repo = await this.repoService.getRepo(repoId);
+    return this.repoMapper.entityToDto(repo);
   }
 
   @Public()

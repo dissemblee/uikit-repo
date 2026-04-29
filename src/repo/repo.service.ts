@@ -116,8 +116,12 @@ export class RepoService {
     const { repoId, update } = args;
   }
 
-  getRepo(repoId: string) {
-    const repo = this.repoRepository.findBy({ id: repoId });
+  async getRepo(repoId: string) {
+    const repo = await this.repoRepository
+      .createQueryBuilder('repo')
+      .leftJoinAndSelect('repo.components', 'component')
+      .where('repo.id = :id', { id: repoId })
+      .getOne();
     if (!repo) throw new RepoNotFoundError(`repo with id ${repoId} not found`);
     return repo;
   }
