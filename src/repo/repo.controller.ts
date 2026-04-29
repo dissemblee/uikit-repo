@@ -11,14 +11,14 @@ export class RepoController {
     private readonly repoMapper: RepoMapper
   ) {}
 
-  // @Get('/:username')
-  // async getRepoByUser(
-  //   @Param('username') username: string
-  // ) {
-  //   const repos = await this.repoService.getRepoByUser(username);
-  //   const response = this.repoMapper.entityToDtos(repos);
-  //   return response;
-  // }
+  @Get('/:username')
+  async getRepoByUser(
+    @Param('username') username: string
+  ) {
+    const repos = await this.repoService.getRepoByUser(username);
+    const response = this.repoMapper.entityToDtos(repos);
+    return response;
+  }
 
   // @Get()
   // async getMany(
