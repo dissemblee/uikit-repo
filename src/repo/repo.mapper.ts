@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { Repo } from "src/postgres/entities/repo.entity";
-import { RepoEntityDto} from '@48-iq/uikit-dto-lib';
+import { RepoCursorResultDto, RepoEntityDto} from '@48-iq/uikit-dto-lib';
 
 @Injectable()
 export class RepoMapper {
@@ -16,5 +16,13 @@ export class RepoMapper {
 
   entityToDtos(entities: Repo[]) {
     return entities.map((entity) => this.entityToDto(entity));
+  }
+
+  toCursorResultDto(entities: Repo[]) {
+    const data = this.entityToDtos(entities);
+    const result = new RepoCursorResultDto({
+      success: true,
+      
+    })
   }
 }

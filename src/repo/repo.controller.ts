@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, Req, StreamableFile } from '
 import { RepoService } from './repo.service';
 import { RepoCreateDto } from '@48-iq/uikit-dto-lib';
 import { RepoMapper } from './repo.mapper';
+import { Public } from 'src/security/public.decorator';
 
 @Controller('/api/repo')
 export class RepoController {
@@ -10,15 +11,40 @@ export class RepoController {
     private readonly repoMapper: RepoMapper
   ) {}
 
-  @Get('/:username')
-  async getRepoByUser(
-    @Param('username') username: string
-  ) {
-    const repos = await this.repoService.getRepoByUser(username);
-    const response = this.repoMapper.entityToDtos(repos);
-    return response;
+  // @Get('/:username')
+  // async getRepoByUser(
+  //   @Param('username') username: string
+  // ) {
+  //   const repos = await this.repoService.getRepoByUser(username);
+  //   const response = this.repoMapper.entityToDtos(repos);
+  //   return response;
+  // }
+
+  // @Get()
+  // async getMany(
+  //   @Query('startDate') startDate?: string,
+  //   @Query('skip') skip?: number,
+  //   @Query('limit') limit?: number,
+  // ) {
+  //   const date = startDate === undefined ? new Date() : new Date(startDate);
+  //   const result = await this.repoService.getMany({
+  //     startDate: date,
+  //     skip,
+  //     limit,
+  //     username: undefined,
+  //   });
+  //   return this.repoMapper.toCursorResultDto(result);
+  // }
+
+  @Public()
+  @Get() 
+  async getAll(){
+    const result = await this.repoService.getAll();
+    return this.repoMapper.entityToDtos(result);
   }
 
+
+  @Public()
   @Get('/:username/:name')
   getRepo(
     @Param('username') username: string,
@@ -28,6 +54,7 @@ export class RepoController {
     return this.repoService.getRepo(repoId);
   }
 
+  @Public()
   @Get('/package/:username/:name')
   async getPackage(
     @Param('username') username: string,

@@ -54,6 +54,40 @@ export class RepoService {
     return entity;
   }
 
+  async getMany(args: {
+    startDate: Date;
+    skip?: number;
+    limit?: number;
+    username?: string;
+  }) {
+    let qb = this.repoRepository.createQueryBuilder('repo');
+    if (args.username)
+      qb = qb
+        .where('repo.username = :username', { username: args.username })
+        .andWhere('repo.createdAt >= :startDate', {
+          startDate: args.startDate,
+        });
+    else
+      qb = qb.where('repo.createdAt >= :startDate', {
+        startDate: args.startDate,
+      });
+
+    if (args.skip) qb = qb.skip(args.skip);
+
+    if (args.limit) qb = qb.take(args.limit);
+
+    const result = await qb.getMany();
+    return result;
+  }
+
+  async getAll() {
+    const result = await this.repoRepository
+      .createQueryBuilder('repo')
+      .leftJoinAndSelect('repo.components', 'component')
+      .getMany();
+    return result;
+  }
+
   async getRepoByUser(username: string) {
     const repos = await this.repoRepository
       .createQueryBuilder('repo')
