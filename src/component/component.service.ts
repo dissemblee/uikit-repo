@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectMinio } from 'src/minio/minio.decorator';
 import { Client as MinioClient } from 'minio';
 import { MINIO_COMPONENTS_BUCKET } from 'src/minio/constants';
@@ -8,6 +8,9 @@ import { ComponentEntityDto } from '@48-iq/uikit-dto-lib';
 import { ComponentType } from 'src/build/models/types';
 @Injectable()
 export class ComponentService {
+
+  private readonly logger = new Logger(ComponentService.name)
+
   constructor(
     private readonly configService: ConfigService,
     @InjectMinio() private readonly minio: MinioClient,
@@ -18,14 +21,9 @@ export class ComponentService {
   }
 
   async loadComponentsMeta(components: string[]): Promise<ComponentType[]> {
-    
     const response = await axios.get<ComponentEntityDto[]>(
-      this.configService.getOrThrow<string>('COMPONENTS_META_URL'),
-      {
-        params: {
-          components,
-        },
-      },
+      this.configService.getOrThrow<string>('COMPONENTS_META_URL') + `?components=${components.join(',')}`,
+      
     );
 
     return response.data.map((meta) => ({

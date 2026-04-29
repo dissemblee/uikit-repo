@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { BuildService } from './build-service.interface';
 import { BuildOptions } from '../models/build-options.interface';
 import { ComponentService } from 'src/component/component.service';
@@ -17,6 +17,9 @@ import { MINIO_REPO_BUCKET } from 'src/minio/constants';
 
 @Injectable()
 export class RollupBuildService extends BuildService {
+
+  private readonly logger = new Logger(RollupBuildService.name);
+
   constructor(
     private readonly componentService: ComponentService,
     @InjectMinio() private readonly minio: MinioClient,
@@ -29,10 +32,16 @@ export class RollupBuildService extends BuildService {
 
     await this.loadComponents(tmpDir, options);
 
+    this.logger.log(`components loaded`);
+
     const componentsPackagesJson = this.getComponentsPackagesJson(
       tmpDir,
       options,
     );
+
+    this.logger.log(JSON.stringify(componentsPackagesJson));
+
+    this.logger.log(`components packages json created`);
 
     this.createPackageJson({
       tmpDir,
@@ -40,6 +49,7 @@ export class RollupBuildService extends BuildService {
       componentsPackagesJson,
     });
 
+    this.logger.log(`package json created`);
     //this.createIndexesForComponents(tmpDir, options);
 
     const bundle = await rollup({
@@ -47,6 +57,7 @@ export class RollupBuildService extends BuildService {
       plugins: [nodeResolve(), commonjs()],
     });
 
+    this.logger.log(`bundle created`);
     await bundle.write({
       dir: path.join(tmpDir, 'dist'),
       format: 'esm',
@@ -74,13 +85,9 @@ export class RollupBuildService extends BuildService {
 
     const stream = fs.createReadStream(path.join(tmpDir, 'tar.tgz'));
 
-    const repoId = `${options.username}/${options.name}/${options.version}`;
+    const repoId = `${options.username}/${options.name}-${options.version}`;
 
-    await this.minio.putObject(
-      MINIO_REPO_BUCKET,
-      repoId,
-      stream,
-    );
+    await this.minio.putObject(MINIO_REPO_BUCKET, repoId, stream);
 
     fs.rmSync(tmpDir, { recursive: true, force: true });
 
@@ -91,8 +98,8 @@ export class RollupBuildService extends BuildService {
       components: options.components,
       name: options.name,
       username: options.username,
-      id: repoId
-    }
+      id: repoId,
+    };
   }
 
   private getEntry(tmpDir: string, options: BuildOptions) {
@@ -112,6 +119,7 @@ export class RollupBuildService extends BuildService {
 
   private async loadComponents(tmpDir: string, buildOptions: BuildOptions) {
     const promises: Promise<void>[] = [];
+    this.logger.log(JSON.stringify(buildOptions));
     for (const meta of buildOptions.components) {
       const component = await this.componentService.readComponent(meta.id);
 
@@ -122,15 +130,14 @@ export class RollupBuildService extends BuildService {
         meta.username,
         meta.name,
       );
-
+      fs.mkdirSync(componentDir, { recursive: true });
       const pipe = component.pipe(extract({ cwd: componentDir }));
-
       const finishedExtract = finished(pipe);
-
+      
       promises.push(finishedExtract);
     }
-
-    await Promise.all(promises);
+    
+    await Promise.all(promises).then(() => {this.logger.log(`components extracted`)});
   }
 
   private getComponentsPackagesJson(tmpDir: string, options: BuildOptions) {
@@ -139,6 +146,7 @@ export class RollupBuildService extends BuildService {
       const packageDir = path.join(
         tmpDir,
         'lib',
+        'src',
         meta.username,
         meta.name,
         'package.json',
@@ -148,6 +156,7 @@ export class RollupBuildService extends BuildService {
 
       packagesJson.push(packageJson);
     }
+
     return packagesJson;
   }
 
@@ -172,7 +181,11 @@ export class RollupBuildService extends BuildService {
   }) {
     const { tmpDir, options, componentsPackagesJson } = args;
     const packageJson = this.getPackageJson(options, componentsPackagesJson);
-    fs.writeFileSync(path.join(tmpDir, 'lib', 'package.json'), packageJson);
+    fs.writeFileSync(
+      path.join(tmpDir, 'lib', 'package.json'),
+      packageJson,
+      'utf8',
+    );
   }
 
   private getPackageJson(

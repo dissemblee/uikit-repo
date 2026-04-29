@@ -10,23 +10,22 @@ export class RepoController {
     private readonly repoMapper: RepoMapper
   ) {}
 
-  @Get('/:username/:name/:version')
+  @Get('/:username/:name')
   getRepo(
     @Param('username') username: string,
     @Param('name') name: string,
-    @Param('version') version: string
   ) {
-    const repoId = `${username}/${name}/${version}`;
+    const repoId = `${username}/${name}`;
     return this.repoService.getRepo(repoId);
   }
 
-  @Get('/package/:useraname/:name/:version')
+  @Get('/package/:useraname/:name')
   getPackage(
     @Param('username') username: string,
     @Param('name') name: string,
     @Param('version') version: string
   ) {
-    const packageId = `${username}/${name}/${version}`;
+    const packageId = `${username}/${name}`;
     return this.repoService.getPackage(packageId);
   }
 
@@ -43,5 +42,6 @@ export class RepoController {
     });
 
     const response = this.repoMapper.entityToDto(result);
+    return response;
   }
 }

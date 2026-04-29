@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Client as MinioClient } from 'minio';
 import { RepoNotFoundError } from 'src/errors/repo-not-found.error';
@@ -15,6 +15,8 @@ import { Component } from 'src/postgres/entities/component.entity';
 
 @Injectable()
 export class RepoService {
+  private readonly logger = new Logger(RepoService.name);
+
   constructor(
     @InjectMinio() private readonly minioClient: MinioClient,
     @InjectRepository(Repo) private readonly repoRepository: Repository<Repo>,
@@ -28,7 +30,7 @@ export class RepoService {
     const components = await this.componentService.loadComponentsMeta(
       repo.components,
     );
-
+    this.logger.log(JSON.stringify(components));
     const buildOptions: BuildOptions = {
       version: repo.version,
       components,
