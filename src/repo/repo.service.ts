@@ -12,6 +12,8 @@ import { ComponentService } from 'src/component/component.service';
 import { BuildOptions } from 'src/build/models/build-options.interface';
 import { ComponentType } from 'src/build/models/types';
 import { Component } from 'src/postgres/entities/component.entity';
+import { BuildTrackerService } from 'src/build/services/build-tracker.service';
+import { BuildStatus } from 'src/postgres/entities/build.entity';
 
 @Injectable()
 export class RepoService {
@@ -24,34 +26,64 @@ export class RepoService {
     private readonly componentRepository: Repository<Component>,
     private readonly buildService: BuildService,
     private readonly componentService: ComponentService,
+    private buildTracker: BuildTrackerService,
   ) {}
 
   async createNewRepo(args: { repo: RepoCreateDto; username: string }) {
     const { repo, username } = args;
+
     const components = await this.componentService.loadComponentsMeta(
       repo.components,
     );
     this.logger.log(JSON.stringify(components));
-    const buildOptions: BuildOptions = {
+
+    const repoId = `${username}/${repo.name}-${repo.version}`;
+
+    const build = await this.buildTracker.createBuild({
+      username,
+      name: repo.name,
+      version: repo.version,
+      repoId,
+    });
+
+    const buildOptions: BuildOptions & { buildId: string } = {
       version: repo.version,
       components,
       name: repo.name,
       username,
+      buildId: build.id,
     };
 
-    const result = await this.buildService.buildAndSave(buildOptions);
+    try {
+      const result = await this.buildService.buildAndSave(buildOptions);
 
-    let entity = new Repo();
-    entity.components = await this.getAndSaveComponents(components);
-    entity.description = repo.description;
-    entity.id = result.id;
-    entity.name = result.name;
-    entity.username = result.username;
-    entity.version = result.version;
+      let entity = new Repo();
+      entity.components = await this.getAndSaveComponents(components);
+      entity.description = repo.description;
+      entity.id = result.id;
+      entity.name = result.name;
+      entity.username = result.username;
+      entity.version = result.version;
 
-    entity = await this.repoRepository.save(entity);
+      entity = await this.repoRepository.save(entity);
 
-    return entity;
+      await this.buildTracker.finishBuild(build.id, BuildStatus.SUCCESS);
+
+      this.logger.log(`Repo ${repoId} successfully created and built`);
+
+      return entity;
+
+    } catch (error: any) {
+      this.logger.error(`Build failed for ${repoId}`, error);
+
+      await this.buildTracker.finishBuild(
+        build.id, 
+        BuildStatus.FAILED, 
+        error.message || 'Unknown error'
+      );
+
+      throw error;
+    }
   }
 
   async getMany(args: {

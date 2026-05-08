@@ -5,6 +5,7 @@ export interface BuildOptions {
   components: ComponentType[];
   name: string;
   username: string;
+  buildId?: string;
 }
 
 

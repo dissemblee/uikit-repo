@@ -14,6 +14,8 @@ import { rollup } from 'rollup';
 import { InjectMinio } from 'src/minio/minio.decorator';
 import { Client as MinioClient } from 'minio';
 import { MINIO_REPO_BUCKET } from 'src/minio/constants';
+import { BuildTrackerService } from './build-tracker.service';
+import { createLogPlugin } from './createLogPlugin';
 
 @Injectable()
 export class RollupBuildService extends BuildService {
@@ -23,83 +25,161 @@ export class RollupBuildService extends BuildService {
   constructor(
     private readonly componentService: ComponentService,
     @InjectMinio() private readonly minio: MinioClient,
+    private buildTracker: BuildTrackerService,
   ) {
     super();
   }
 
-  async buildAndSave(options: BuildOptions) {
-    const tmpDir = tmp.dirSync({ unsafeCleanup: true }).name;
+  async buildAndSave(options: BuildOptions & { buildId: string }) {
+    const { buildId, username, name, version } = options;
+    const repoId = `${username}/${name}-${version}`;
 
-    await this.loadComponents(tmpDir, options);
+    const originalConsoleLog = console.log;
+    const originalConsoleError = console.error;
+    const originalConsoleWarn = console.warn;
+    const originalConsoleDebug = console.debug;
 
-    this.logger.log(`components loaded`);
+    try {
+      await this.buildTracker.appendLog(buildId, `Starting build: ${repoId}`);
 
-    const componentsPackagesJson = this.getComponentsPackagesJson(
-      tmpDir,
-      options,
-    );
+      const tmpDir = tmp.dirSync({ unsafeCleanup: true }).name;
 
-    this.logger.log(JSON.stringify(componentsPackagesJson));
+      const captureLog = (msg: any, level: 'info' | 'warn' | 'error' | 'debug' = 'info') => {
+        try {
+          const message =
+            typeof msg === 'string'
+              ? msg
+              : msg?.message || JSON.stringify(msg, null, 2);
 
-    this.logger.log(`components packages json created`);
+          this.buildTracker.appendLog(buildId, message, level).catch((e) => {
+            originalConsoleError('Failed to save log:', e);
+          });
+        } catch (e) {
+          originalConsoleError('Log capture error:', e);
+        }
+      };
 
-    this.createPackageJson({
-      tmpDir,
-      options,
-      componentsPackagesJson,
-    });
+      console.log = (...args: any[]) => {
+        originalConsoleLog(...args);
+        captureLog(args.join(' '), 'info');
+      };
 
-    this.logger.log(`package json created`);
-    //this.createIndexesForComponents(tmpDir, options);
+      console.error = (...args: any[]) => {
+        originalConsoleError(...args);
+        captureLog(args.join(' '), 'error');
+      };
 
-    const bundle = await rollup({
-      input: this.getEntry(tmpDir, options),
-      plugins: [nodeResolve(), commonjs()],
-    });
+      console.warn = (...args: any[]) => {
+        originalConsoleWarn(...args);
+        captureLog(args.join(' '), 'warn');
+      };
 
-    this.logger.log(`bundle created`);
-    await bundle.write({
-      dir: path.join(tmpDir, 'dist'),
-      format: 'esm',
-      exports: 'named',
-      preserveModules: true,
-      preserveModulesRoot: path.join(tmpDir, 'lib', 'src'),
-      sourcemap: true,
-    });
+      console.debug = (...args: any[]) => {
+        originalConsoleDebug(...args);
+        captureLog(args.join(' '), 'debug');
+      };
 
-    fs.copyFileSync(
-      path.join(tmpDir, 'lib', 'package.json'),
-      path.join(tmpDir, 'dist', 'package.json'),
-    );
+      await this.loadComponents(tmpDir, options);
+      await this.buildTracker.appendLog(buildId, 'Components loaded and extracted');
 
-    await create(
-      {
-        gzip: true,
-        file: path.join(tmpDir, 'tar.tgz'),
-        portable: true,
-        strict: true,
-        cwd: path.join(tmpDir, 'dist'),
-      },
-      ['.'],
-    );
+      const componentsPackagesJson = this.getComponentsPackagesJson(tmpDir, options);
+      await this.buildTracker.appendLog(buildId, 'Components package.json processed');
 
-    const stream = fs.createReadStream(path.join(tmpDir, 'tar.tgz'));
+      this.createPackageJson({
+        tmpDir,
+        options,
+        componentsPackagesJson,
+      });
+      await this.buildTracker.appendLog(buildId, 'Root package.json created');
 
-    const repoId = `${options.username}/${options.name}-${options.version}`;
+      const bundle = await rollup({
+        input: this.getEntry(tmpDir, options),
+        plugins: [nodeResolve(), commonjs(), createLogPlugin(buildId, this.buildTracker),],
+        onLog(level: 'warn' | 'info' | 'debug', log: any) {
+          let prefix = '[Rollup]';
+          let logLevel: 'info' | 'warn' | 'error' | 'debug' = 'info';
 
-    await this.minio.putObject(MINIO_REPO_BUCKET, repoId, stream);
+          if (level === 'warn') {
+            prefix = '[Rollup Warning]';
+            logLevel = 'warn';
+          } else if (level === 'debug') {
+            prefix = '[Rollup Debug]';
+            logLevel = 'debug';
+          }
 
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+          const message = log.message || JSON.stringify(log, null, 2);
+          console[logLevel === 'warn' ? 'warn' : 'log'](`${prefix} ${message}`);
+        },
+        onwarn: (warning, warn) => {
+          const message =
+            warning.message || JSON.stringify(warning, null, 2);
 
-    await bundle.close();
+          console.warn(`[Rollup WARN] ${message}`);
+          this.buildTracker.appendLog(buildId, message, 'warn');
+          
+          warn(warning);
+        },
+      });
 
-    return {
-      version: options.version,
-      components: options.components,
-      name: options.name,
-      username: options.username,
-      id: repoId,
-    };
+      await this.buildTracker.appendLog(buildId, 'Rollup bundle created');
+
+      await bundle.write({
+        dir: path.join(tmpDir, 'dist'),
+        format: 'esm',
+        exports: 'named',
+        preserveModules: true,
+        preserveModulesRoot: path.join(tmpDir, 'lib', 'src'),
+        sourcemap: true,
+      });
+
+      await this.buildTracker.appendLog(buildId, 'Bundle written to dist folder');
+
+      fs.copyFileSync(
+        path.join(tmpDir, 'lib', 'package.json'),
+        path.join(tmpDir, 'dist', 'package.json'),
+      );
+
+      await create(
+        {
+          gzip: true,
+          file: path.join(tmpDir, 'tar.tgz'),
+          portable: true,
+          strict: true,
+          cwd: path.join(tmpDir, 'dist'),
+        },
+        ['.'],
+      );
+
+      await this.buildTracker.appendLog(buildId, 'Tarball created');
+
+      const stream = fs.createReadStream(path.join(tmpDir, 'tar.tgz'));
+      await this.minio.putObject(MINIO_REPO_BUCKET, repoId, stream);
+
+      await this.buildTracker.appendLog(buildId, `Successfully uploaded to MinIO: ${repoId}`);
+
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      await bundle.close();
+
+      await this.buildTracker.appendLog(buildId, `Build completed successfully!`, 'info');
+
+      return {
+        version: options.version,
+        components: options.components,
+        name: options.name,
+        username: options.username,
+        id: repoId,
+      };
+    } catch (error: any) {
+      const errorMessage = error.message || error.toString();
+      await this.buildTracker.appendLog(buildId, `Build failed: ${errorMessage}`, 'error');
+      this.logger.error(`Build ${repoId} failed`, error);
+      throw error;
+    } finally {
+      console.log = originalConsoleLog;
+      console.error = originalConsoleError;
+      console.warn = originalConsoleWarn;
+      console.debug = originalConsoleDebug;
+    }
   }
 
   private getEntry(tmpDir: string, options: BuildOptions) {
