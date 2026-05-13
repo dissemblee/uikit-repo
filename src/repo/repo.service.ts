@@ -35,6 +35,7 @@ export class RepoService {
     const components = await this.componentService.loadComponentsMeta(
       repo.components,
     );
+
     this.logger.log(JSON.stringify(components));
 
     const repoId = `${username}/${repo.name}-${repo.version}`;
@@ -133,7 +134,7 @@ export class RepoService {
     this.logger.log('meta: ' + JSON.stringify(meta));
     let components = meta.map((m) => {
       const entity = new Component();
-      entity.id = m.id;
+      entity.id = `${m.username}/${m.name}`;
       entity.version = m.version;
 
       return entity;
